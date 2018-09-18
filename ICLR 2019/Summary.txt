@@ -1,0 +1,12 @@
+Summary of ICLR 2019 experiments:
+
+Incremental MNIST (Validation Set)
+Incremental MNIST (MSE or SVM)
+Permuted MNIST (Validation Set)
+Permuted MNIST (MSE or SVM)
+Incremental CIFAR 10 (Validation Set)
+Incremental CIFAR 10 (MSE or SVM)
+CIFAR 10-100 SPLIT (Validation Set)
+CIFAR 10-100 SPLIT (MSE or SVM)
+
+Methods tested: Our approach, EWC, Deep Generative Replay
