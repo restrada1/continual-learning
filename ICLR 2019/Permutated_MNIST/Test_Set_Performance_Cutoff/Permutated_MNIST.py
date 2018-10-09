@@ -21,8 +21,10 @@ import torchvision
 import time
 from PIL import Image
 import pickle
-
-
+import visdom
+vis = visdom.Visdom()
+vis.delete_env('Permutated_MNIST_TEST_SET') #If you want to clear all the old plots for this python Experiments.Resets the Environment
+vis = visdom.Visdom(env='Permutated_MNIST_TEST_SET')
 plt.rcParams["figure.figsize"] = (12,10)
 plt.rcParams["font.size"] = 16
 
@@ -94,7 +96,7 @@ def RELOAD_DATASET(ptransform):
     testset = datasets.MNIST(root='../data', train=False,download=True, transform=transform)
     train_loader = torch.utils.data.DataLoader(trainset, batch_size=64,shuffle=True,**kwargs)
     test_loader = torch.utils.data.DataLoader(testset, batch_size=1000,shuffle=True, **kwargs)
-    return test_loader
+    return train_loader,test_loader
 
 
 ######################################################################################################
@@ -112,35 +114,39 @@ def loadWeights_mnsit(weights_to_load, net):
     return model
 
 print("device is ",device)
-model = models.Net().to(device)
-model_reset= models.Net().to(device)
-optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
+#model = models.Net().to(device)
+#model_reset= models.Net().to(device)
+#optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
 student_model=models.CAE().to(device)#nn.DataParallel(models.CAE().to(device))
 teacher_model=models.CAE().to(device)#nn.DataParallel(models.CAE().to(device))
 vae_optimizer = optim.Adam(student_model.parameters(), lr = 0.0001)
 lam = 0.001
 Actual_Accuracy=[]
 threshold_batchid=[]
-
+Actual_task_net_weights=[]
+# win = vis.line(
+# X=np.array([0]),
+# Y=np.array([0]),
+# win="test",
+# name='Line1',
+# )
 #####################################################################################################################
 # For Viewing the test/train images-just for confirmation
 #####################################################################################################################
 classes = ('0','1', '2', '3', '4','5','6','7','8','9')
-# functions to show an image
-#plt.show()
-def imshow(img):
+def imshow(img,permuatation):
     img = img / 2 + 0.5     # unnormalize
     npimg = img.numpy()
     plt.imshow(np.transpose(npimg, (1, 2, 0)))
-    plt.savefig('train_data_image.png')
+    plt.savefig('Test_Train_Images/train_data_image'+str(permuatation)+'.png')
 
-def imshow_test(img):
+def imshow_test(img,permuatation):
     img = img / 2 + 0.5     # unnormalize
     npimg = img.numpy()
     plt.imshow(np.transpose(npimg, (1, 2, 0)))
-    plt.savefig('test_data_image.png')
+    plt.savefig('Test_Train_Images/test_data_image'+str(permuatation)+'.png')
 
-def SHOW_TEST_TRAIN_IMAGES_SAMPLE():
+def SHOW_TEST_TRAIN_IMAGES_SAMPLE(permuatation):
     # get some random training images
     global train_loader
     global test_loader
@@ -150,39 +156,49 @@ def SHOW_TEST_TRAIN_IMAGES_SAMPLE():
     print("length if train set loader is",len(train_loader))
     images, labels = dataiter.next()
     images_test, labels_test = dataiter_test.next()
-    imshow(torchvision.utils.make_grid(images))
-    imshow_test(torchvision.utils.make_grid(images_test))
-    img = Image.open('train_data_image.png')
-    img.show()
-    time.sleep(5)
+    imshow(torchvision.utils.make_grid(images),permuatation)
+    imshow_test(torchvision.utils.make_grid(images_test),permuatation)
+    #img = Image.open('train_data_image.png')
+    #img.show()
+    #time.sleep(5)
     print(' '.join('%5s' % classes[labels[j]] for j in range(4)))
-    img = Image.open('test_data_image.png')
+    #img = Image.open('test_data_image.png')
     print(' '.join('%5s' % classes[labels_test[j]] for j in range(4)))
-    img.show()
-SHOW_TEST_TRAIN_IMAGES_SAMPLE()
 
 ######################################################################################################
 # TRAIN
 ######################################################################################################
-def train(args, model, device, train_loader, optimizer, epoch):
+def train(model,train_loader,test_loader,optimizer, epochs,task_number):
+    options = dict(fillarea=True,width=400,height=400,xlabel='Batch_ID(Iterations)',ylabel='Loss',title=task_number)
+    acc_options = dict(fillarea=True,width=400,height=400,xlabel='Epoch',ylabel='Accuracy',title=task_number)
+    win = vis.line(X=np.array([2]),Y=np.array([1]),win=task_number,name=task_number,opts=options)
     model.to(device)
     model.train()
-    for batch_idx, (data, target) in enumerate(train_loader):
-        data, target = data.to(device), target.to(device)
-        optimizer.zero_grad()
-        output = model(data)
-        loss = F.nll_loss(output, target)
-        loss.backward()
-        optimizer.step()
-        if batch_idx % args.log_interval == 0:
-            print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx * len(data), len(train_loader.dataset),
-                100. * batch_idx / len(train_loader), loss.item()))
+    total_batchid=0
+    task_test_accuracy=[0]
+    for epoch in range(epochs):
+        for batch_idx, (data, target) in enumerate(train_loader):
+            data, target = data.to(device), target.to(device)
+            optimizer.zero_grad()
+            output = model(data)
+            loss = F.nll_loss(output, target)
+            vis.line(X=np.array([total_batchid+batch_idx]),Y=np.array([loss.item()]),win=win,update='append')
+            loss.backward()
+            optimizer.step()
+            if batch_idx % args.log_interval == 0:
+                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                    epoch, batch_idx * len(data), len(train_loader.dataset),
+                    100. * batch_idx / len(train_loader), loss.item()))
+        total_batchid=total_batchid+batch_idx
+        acc=test(model,test_loader)
+        task_test_accuracy.append(acc)
+        vis.bar(X=np.array(task_test_accuracy),win='ACC'+task_number,opts=acc_options)
+    return acc
 
 ######################################################################################################
 # TEST
 ######################################################################################################
-def test(args, model, device, test_loader):
+def test(model, test_loader):
     model.to(device)
     model.eval()
     test_loss = 0
@@ -200,27 +216,6 @@ def test(args, model, device, test_loader):
         test_loss, correct, len(test_loader.dataset),
         100. * correct / len(test_loader.dataset)))
     return 100. * correct / len(test_loader.dataset)
-
-######################################################################################################
-# TRAIN AND TEST
-######################################################################################################
-def TRAIN_TEST_MNIST():
-    for epoch in range(0, 3):
-        train(args, model, device, train_loader, optimizer, epoch)
-        acc=test(args, model, device, test_loader)
-    return acc
-######################################################################################################
-# FLATTEN THE MNIST WEIGHTS AND FEED IT TO VAE
-######################################################################################################
-def FLATTEN_WEIGHTS_TRAIN_VAE(task_samples,model):
-    final_skill_sample=[]
-    Flat_input,net_shapes=helper_functions.flattenNetwork(model.cpu())
-    final_skill_sample.append(Flat_input)
-    if len(task_samples)==0:
-        accuracies = CAE_AE_TRAIN(net_shapes,task_samples+final_skill_sample,100)
-    else:
-        accuracies = CAE_AE_TRAIN(net_shapes,task_samples+final_skill_sample,60)
-    return accuracies
 
 ######################################################################################################
 #                                       PLOTTING                                                     #
@@ -296,14 +291,24 @@ print("VAE SCHEDULER IS ", vae_optimizer)
 Skill_Mu=[]
 def CAE_AE_TRAIN(shapes,task_samples,iterations):
     global stage
+    options = dict(fillarea=True,width=400,height=400,xlabel='Iterations',ylabel='Loss',title='CAE_skills'+str(len(task_samples)))
+    options_2 = dict(fillarea=True,width=400,height=400,xlabel='Iterations',ylabel='Accuracy',title='CAE_skills'+str(len(task_samples)))
+    options_mse = dict(fillarea=True,width=400,height=400,xlabel='Iterations',ylabel='MSE',title='CAE_MSE_skills'+str(len(task_samples)))
+    options_mse_org = dict(fillarea=True,width=400,height=400,xlabel='Iterations',ylabel='MSE_Orginal',title='CAE_MSE_WRT_Orginal_skills'+str(len(task_samples)))
+    win = vis.line(X=np.array([0]),Y=np.array([0.005]),win='CAE_skills '+str(len(task_samples)),name='CAE_skills'+str(len(task_samples)),opts=options)
+    win_2 = vis.line(X=np.array([0]),Y=np.array([0]),win='CAE_Acc_skills '+str(len(task_samples)),name='CAE_skills'+str(len(task_samples)),opts=options_2)
+    win_mse = vis.line(X=np.array([0]),Y=np.array([0]),win='CAE_MSE_skills '+str(len(task_samples)),name='CAE_MSE_skills'+str(len(task_samples)),opts=options_mse)
+    win_mse_org = vis.line(X=np.array([0]),Y=np.array([0]),win='CAE_MSE_Org_skills '+str(len(task_samples)),name='CAE_MSE_Orgskills'+str(len(task_samples)),opts=options_mse_org)
     student_model.train()
+    final_dataframe_1=pd.DataFrame()
     accuracies = np.zeros((iterations,len(task_samples)))
     for i in range(0,len(task_samples)-len(Skill_Mu)):
         Skill_Mu.append([])
     for batch_idx in range(1,iterations):
-        #randPerm = np.random.permutation(len(task_samples))
-        randPerm,nReps = helper_functions.biased_permutation(stage+1,nBiased,trainBias,len(task_samples),minReps)
-        print(randPerm,nReps)
+        randPerm = np.random.permutation(len(task_samples))
+        #randPerm,nReps = helper_functions.biased_permutation(stage+1,nBiased,trainBias,len(task_samples),minReps)
+        #print(randPerm,nReps)
+        resend=[]
         for s in randPerm:
             skill=s
             vae_optimizer.zero_grad()
@@ -314,93 +319,134 @@ def CAE_AE_TRAIN(shapes,task_samples,iterations):
                 data.view(-1, 21840), recons_x,hidden_representation, lam)
             Skill_Mu[skill]=hidden_representation
             loss.backward()
+            #options_lgnd = dict(fillarea=True, legend=['Loss_Skill_'+str(skill)])
+            vis.line(X=np.array([batch_idx]),Y=np.array([loss.item()]),win=win,name='Loss_Skill_'+str(skill),update='append')#,opts=options_lgnd)
             vae_optimizer.step()
             print('Train Iteration: {},tLoss: {:.6f},picked skill {}'.format(batch_idx,loss.data[0],skill ))
-
+            if float(loss.data[0] * 10000)>=1.00:
+                resend.append(s)
+        print("RESEND List",resend)
+        for s in resend:
+            skill=s
+            vae_optimizer.zero_grad()
+            data=Variable(torch.FloatTensor(task_samples[skill])).to(device)
+            hidden_representation, recons_x = student_model(data)
+            W = student_model.state_dict()['fc2.weight']
+            loss,con_mse,con_loss,closs_mul_lam = helper_functions.Contractive_loss_function(W, 
+                data.view(-1, 21840), recons_x,hidden_representation, lam)
+            Skill_Mu[skill]=hidden_representation
+            loss.backward()
+            #options_lgnd = dict(fillarea=True, legend=['Loss_Skill_'+str(skill)])
+            vis.line(X=np.array([batch_idx]),Y=np.array([loss.item()]),win=win,name='Loss_Skill_'+str(skill),update='append')#,opts=options_lgnd)
+            vae_optimizer.step()
+            print('Train Iteration: {},tLoss: {:.6f},picked skill {}'.format(batch_idx,loss.data[0],skill ))
+            
+           
         if batch_idx %1==0:
             values=0
             for i in range(0,len(task_samples)):
+                collect_data_1=[]
                 mu1=Skill_Mu[i][0]
                 task_sample = student_model.decoder(mu1).cpu()
                 sample=task_sample.data.numpy().reshape(21840)
-                print('MSE IS',i,mean_squared_error(task_sample.data.numpy(),Variable(torch.FloatTensor(task_samples[i])).data.numpy()))
+                #print('MSE IS',i,mean_squared_error(task_sample.data.numpy(),Variable(torch.FloatTensor(task_samples[i])).data.numpy()))
                 #mse=mean_squared_error(task_sample.data.numpy(),Variable(torch.FloatTensor(task_samples[i])).data.numpy())
                 final_weights=helper_functions.unFlattenNetwork(sample, shapes)
                 loadWeights_mnsit(final_weights,model)
-                test_loader=RELOAD_DATASET(idx_permute[i])
-                Avg_Accuracy= test(args, model, device, test_loader)
+                Train_loader,Test_loader=RELOAD_DATASET(idx_permute[i])
+                mse=mean_squared_error(sample,Variable(torch.FloatTensor(task_samples[i])).data.numpy())
+                mse_orginal=mean_squared_error(sample,Actual_task_net_weights[i])
+                Avg_Accuracy= test(model, Test_loader)
+                collect_data_1.extend([batch_idx,i,mse,mse_orginal,Avg_Accuracy,Actual_Accuracy[i],len(resend)])
+                final_dataframe_1=pd.concat([final_dataframe_1, pd.DataFrame(collect_data_1).transpose()])
                 accuracies[batch_idx,i] = Avg_Accuracy
-                if round(Avg_Accuracy+0.5)>=int(Actual_Accuracy[i]-1):
-                    values=values+1
+                if len(task_samples)>6:
+                    if round(Avg_Accuracy+0.5)>=int(Actual_Accuracy[i]-1):
+                        values=values+1
+                else:
+                    if round(Avg_Accuracy+0.5)>=int(Actual_Accuracy[i]):
+                        values=values+1
+                vis.line(X=np.array([batch_idx]),Y=np.array([Avg_Accuracy]),win=win_2,name='Acc_Skill_'+str(i),update='append')
+                vis.line(X=np.array([batch_idx]),Y=np.array([mse]),win=win_mse,name='MSE_Skill_'+str(i),update='append')
+                vis.line(X=np.array([batch_idx]),Y=np.array([mse_orginal]),win=win_mse_org,name='MSE_Org_Skill_'+str(i),update='append')#,opts=options_lgnd)
             if values==len(task_samples):
                 print("########## \n Batch id is",batch_idx,"\n#########")
                 threshold_batchid.append(batch_idx)
                 break
     stage=stage+1
+    final_dataframe_1.columns=['batch_idx','skill','caluclated_mse','mse_wrt_orginal','Accuracy','Actual_Accuracy','Resend_len']
+    final_dataframe_1.to_hdf('Collected_Data/'+str(len(task_samples))+'_data','key1')
     return accuracies
 
+
+######################################################################################################
+# FLATTEN THE MNIST WEIGHTS AND FEED IT TO VAE
+######################################################################################################
+def FLATTEN_WEIGHTS_TRAIN_VAE(task_samples,model):
+    final_skill_sample=[]
+    Flat_input,net_shapes=helper_functions.flattenNetwork(model.cpu())
+    final_skill_sample.append(Flat_input)
+    Actual_task_net_weights.append(Flat_input)
+    vis.line(X=np.array(range(0,len(Flat_input))),Y=Flat_input,win=win_task_network,name='Task_net_'+str(len(task_samples)),update='append')
+    if len(task_samples)==0:
+        accuracies = CAE_AE_TRAIN(net_shapes,task_samples+final_skill_sample,300)
+    else:
+        accuracies = CAE_AE_TRAIN(net_shapes,task_samples+final_skill_sample,300)
+    return accuracies
 ######################################################################################################
 #                                   CREATING THE PERMUTATIONS
 ######################################################################################################
 #np.random.seed(0)
 idx_permute = [np.random.permutation(28**2) for _ in range(10)] 
-
+acc_viz=vis.bar(X=[1,2,3])
+options_task_network = dict(fillarea=True,width=400,height=400,xlabel='Task Network',ylabel='T',title='TASK_NETWORK')
+win_task_network = vis.line(Y=np.array([0.001,0.001]),win='Task Net Dist',name='TASK NET DIST',opts=options_task_network)
 ######################################################################################################
 #                                   TRAINING STARTS HERE - MNIST + CAE
 ######################################################################################################
-if Flags['mnist_train']:
-    allAcc = []
-    for permuatation in range(0,10):
-        task_samples=[]
-        print("########## \n Threshold id is",threshold_batchid,"\n#########")
-        RELOAD_DATASET(idx_permute[permuatation])
-        SHOW_TEST_TRAIN_IMAGES_SAMPLE()
-        accuracy=TRAIN_TEST_MNIST()
-        Actual_Accuracy.append(int(accuracy))
-        print("Actual acc",Actual_Accuracy)
-        torch.save(model.state_dict(),'../mnist_individual_weights/permutated_MNIST/mnist_digit_solver_'+str(permuatation)+'.pt')
-        if permuatation==0 :
-            accuracies = FLATTEN_WEIGHTS_TRAIN_VAE([],model)
-        else:
-            for i in range(0, permuatation):  
-                recall_memory_sample=Skill_Mu[i][0]
-                generated_sample=student_model.decoder(recall_memory_sample).cpu()
-                task_samples.append(generated_sample)
-            accuracies = FLATTEN_WEIGHTS_TRAIN_VAE(task_samples,model) 
-        allAcc.append(accuracies)
 
-with open('allAcc', 'wb') as fp:
-    pickle.dump(allAcc, fp)
+allAcc = []
+for permuatation in range(0,10):
+    model = models.Net().to(device)
+    optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+    task_samples=[]
+    print("########## \n Threshold id is",threshold_batchid,"\n#########")
+    Train_loader,Test_loader=RELOAD_DATASET(idx_permute[permuatation])
+    SHOW_TEST_TRAIN_IMAGES_SAMPLE(permuatation)
+    accuracy=train(model,Train_loader,Test_loader,optimizer,3,'MNIST Skill '+str(permuatation))
+    options = dict(fillarea=True,width=400,height=400,xlabel='Skill',ylabel='Actual_Accuracy',title='Actual_Accuracy')
+    Actual_Accuracy.append(int(accuracy))
+    vis.bar(X=torch.Tensor(Actual_Accuracy),opts=options,win='acc_viz')
+    print("Actual acc",Actual_Accuracy)
+    torch.save(model.state_dict(),'task_net_models/mnist_reset_digit_solver_'+str(permuatation)+'.pt')
+    if permuatation==0 :
+        accuracies = FLATTEN_WEIGHTS_TRAIN_VAE([],model)
+    else:
+        for i in range(0, permuatation):
+            recall_memory_sample=Skill_Mu[i][0]
+            generated_sample=student_model.decoder(recall_memory_sample).cpu()
+            task_samples.append(generated_sample)
+        accuracies = FLATTEN_WEIGHTS_TRAIN_VAE(task_samples,model)
+    allAcc.append(accuracies)
 
-with open('Actual_Accuracy', 'wb') as fp:
-    pickle.dump(Actual_Accuracy, fp)
+    with open('Collected_Data/allAcc', 'wb') as fp:
+        pickle.dump(allAcc, fp)
 
-plotAccuracies(allAcc)
-plotAccuracyDiff(allAcc,Actual_Accuracy)
-plotAccuracyDiffPoint(allAcc,Actual_Accuracy,testPoint=25)
-plotAccuracyDiffPointAll(allAcc,Actual_Accuracy,testPoint=25)
-######################################################################################################
-#                                   TRAINING STARTS HERE - MNIST LOAD WEIGHTS + CAE
-######################################################################################################
-if Flags['load_mnist_and_train_cae']:
-    allAcc = []
-    for permuatation in range(0,10):
-        model=model_reset
-        task_samples=[]
-        print("########## \n Threshold id is",threshold_batchid,"\n#########")
-        RELOAD_DATASET(idx_permute[0])
-        SHOW_TEST_TRAIN_IMAGES_SAMPLE()
-        accuracy=TRAIN_TEST_MNIST()
-        Actual_Accuracy.append(int(accuracy))
-        print("Actual acc",Actual_Accuracy)
-        torch.save(model.state_dict(),'../mnist_individual_weights/permutated_MNIST/mnist_digit_solver_'+str(permuatation)+'.pt')
-        if permuatation ==0 :
-            accuracies = FLATTEN_WEIGHTS_TRAIN_VAE([],model)
-        # else:
-        #     for i in range(0 permuatation):  
-        #         recall_memory_sample=Skill_Mu[i][0]#Tasks_MU_LOGVAR[i]['mu']#[len(Tasks_MU_LOGVAR[i]['mu'])-1]
-        #         generated_sample=student_model.decoder(recall_memory_sample).cpu()
-        #         task_samples.append(generated_sample)
-        #     accuracies = FLATTEN_WEIGHTS_TRAIN_VAE(task_samples,model) 
-        # allAcc.append(accuracies)
+    with open('Collected_Data/Actual_Accuracy', 'wb') as fp:
+        pickle.dump(Actual_Accuracy, fp)
+    
+    vis.bar(X=threshold_batchid,opts=options,win='threshold_viz')
+    # if permuatation>=1:
+    #     options = dict(fillarea=True,width=400,height=400,xlabel='Skill',ylabel='Actual_Accuracy',title='Actual_Accuracy')
+    #     options_threshold = dict(fillarea=True,width=400,height=400,xlabel='Skill',ylabel='Threshold_Cutoff',title='Cutoff_Threshold')
+    #     vis.bar(X=Actual_Accuracy,opts=options,win='acc_viz')
+    #     vis.bar(X=threshold_batchid,opts=options,win='threshold_viz')
+
+
+
+#plotAccuracies(allAcc)
+#plotAccuracyDiff(allAcc,Actual_Accuracy)
+#plotAccuracyDiffPoint(allAcc,Actual_Accuracy,testPoint=25)
+#plotAccuracyDiffPointAll(allAcc,Actual_Accuracy,testPoint=25)
+
 

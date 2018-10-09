@@ -614,6 +614,7 @@ def CAE_AE_TRAIN(shapes,task_samples,iterations):
                 threshold_batchid.append(batch_idx)
                 break
     stage=stage+3
+    print(final_dataframe_1.head(5))
     final_dataframe_1.columns=['batch_idx','skill','caluclated_mse','Accuracy','Actual_Accuracy','Resend_len']
     final_dataframe_1.to_hdf('Test_New_Method/'+str(len(task_samples_copy))+'_MSE_new_method','key1')
     return accuracies
