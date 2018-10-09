@@ -356,7 +356,7 @@ def CAE_AE_TRAIN(shapes,task_samples,iterations):
                 #mse=mean_squared_error(task_sample.data.numpy(),Variable(torch.FloatTensor(task_samples[i])).data.numpy())
                 final_weights=helper_functions.unFlattenNetwork(sample, shapes)
                 loadWeights_mnsit(final_weights,model)
-                if mnsit_class%2==0:
+                if i%2==0:
                     load_individual_class([i],[1,3,5,7])
                 else:
                     load_individual_class([i],[0,2,4,6])
