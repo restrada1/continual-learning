@@ -1,3 +1,11 @@
+##############################################################################################################################
+# Aim of the Experiment: Permutated MNIST For Fixed Iterations
+# Output: All the collected data for individual skill is present in the folder -- Collected_Data
+# Task Nets: All the trained Permutated MNIST weights saved in the folder -- task_net_models
+# Test & Train Image Samples: All the train,test Permutated MNIST task images sample saved in the folder -- Test_Train_Images
+# Plots : If any plots you can save in folder -- Permuated_MNIST_plots (Currently Not Used)
+# Conclusion : Working very well you can see all the outputs in Visoom or in folder Permuated_MNIST_plots with output.pdf
+##############################################################################################################################
 from __future__ import print_function
 import argparse
 import torch
@@ -387,7 +395,7 @@ def FLATTEN_WEIGHTS_TRAIN_VAE(task_samples,model):
     Flat_input,net_shapes=helper_functions.flattenNetwork(model.cpu())
     final_skill_sample.append(Flat_input)
     Actual_task_net_weights.append(Flat_input)
-    vis.line(X=np.array(range(0,len(Flat_input))),Y=Flat_input,win=win_task_network,name='Task_net_'+str(len(task_samples)),update='append')
+    vis.line(X=np.array(range(0,len(Flat_input))),Y=Flat_input,win='win_task_network',name='Task_net_'+str(len(task_samples)),opts=options_task_network,update='append')
     if len(task_samples)==0:
         accuracies = CAE_AE_TRAIN(net_shapes,task_samples+final_skill_sample,300)
     else:
@@ -398,9 +406,9 @@ def FLATTEN_WEIGHTS_TRAIN_VAE(task_samples,model):
 ######################################################################################################
 #np.random.seed(0)
 idx_permute = [np.random.permutation(28**2) for _ in range(10)] 
-acc_viz=vis.bar(X=[1,2,3])
+#=vis.bar(X=[1,2,3])
 options_task_network = dict(fillarea=True,width=400,height=400,xlabel='Task Network',ylabel='T',title='TASK_NETWORK')
-win_task_network = vis.line(Y=np.array([0.001,0.001]),win='Task Net Dist',name='TASK NET DIST',opts=options_task_network)
+#win_task_network = vis.line(Y=np.array([0.001,0.001]),win='Task Net Dist',name='TASK NET DIST',opts=options_task_network)
 ######################################################################################################
 #                                   TRAINING STARTS HERE - MNIST + CAE
 ######################################################################################################
@@ -413,10 +421,9 @@ for permuatation in range(0,10):
     print("########## \n Threshold id is",threshold_batchid,"\n#########")
     Train_loader,Test_loader=RELOAD_DATASET(idx_permute[permuatation])
     SHOW_TEST_TRAIN_IMAGES_SAMPLE(permuatation)
-    accuracy=train(model,Train_loader,Test_loader,optimizer,3,'MNIST Skill '+str(permuatation))
+    accuracy=train(model,Train_loader,Test_loader,optimizer,3,'MNIST Skill '+str(permuatation+1))
     options = dict(fillarea=True,width=400,height=400,xlabel='Skill',ylabel='Actual_Accuracy',title='Actual_Accuracy')
     Actual_Accuracy.append(int(accuracy))
-    vis.bar(X=torch.Tensor(Actual_Accuracy),opts=options,win='acc_viz')
     print("Actual acc",Actual_Accuracy)
     torch.save(model.state_dict(),'task_net_models/mnist_reset_digit_solver_'+str(permuatation)+'.pt')
     if permuatation==0 :
@@ -435,12 +442,12 @@ for permuatation in range(0,10):
     with open('Collected_Data/Actual_Accuracy', 'wb') as fp:
         pickle.dump(Actual_Accuracy, fp)
     
-    vis.bar(X=threshold_batchid,opts=options,win='threshold_viz')
-    # if permuatation>=1:
-    #     options = dict(fillarea=True,width=400,height=400,xlabel='Skill',ylabel='Actual_Accuracy',title='Actual_Accuracy')
-    #     options_threshold = dict(fillarea=True,width=400,height=400,xlabel='Skill',ylabel='Threshold_Cutoff',title='Cutoff_Threshold')
-    #     vis.bar(X=Actual_Accuracy,opts=options,win='acc_viz')
-    #     vis.bar(X=threshold_batchid,opts=options,win='threshold_viz')
+
+    if permuatation>=1:
+        options = dict(fillarea=True,width=400,height=400,xlabel='Skill',ylabel='Actual_Accuracy',title='Actual_Accuracy')
+        options_threshold = dict(fillarea=True,width=400,height=400,xlabel='Skill',ylabel='Threshold_Cutoff',title='Cutoff_Threshold')
+        vis.bar(X=Actual_Accuracy,opts=options,win='acc_viz')
+        vis.bar(X=threshold_batchid,opts=options_threshold,win='threshold_viz')
 
 
 
