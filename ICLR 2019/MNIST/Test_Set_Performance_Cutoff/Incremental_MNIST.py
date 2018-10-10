@@ -275,7 +275,6 @@ def train(model,train_loader,test_loader,optimizer, epochs,task_number):
                     100. * batch_idx / len(train_loader), loss.item()))
         total_batchid=total_batchid+batch_idx
         acc=test(model,test_loader)
-        acc=test(model,test_loader)
         task_test_accuracy.append(acc)
         vis.bar(X=np.array(task_test_accuracy),win='ACC'+task_number,opts=acc_options)
     return acc
