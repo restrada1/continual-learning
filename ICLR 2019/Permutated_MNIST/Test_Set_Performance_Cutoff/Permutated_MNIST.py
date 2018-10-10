@@ -422,7 +422,7 @@ for permuatation in range(0,10):
     print("########## \n Threshold id is",threshold_batchid,"\n#########")
     Train_loader,Test_loader=RELOAD_DATASET(idx_permute[permuatation])
     SHOW_TEST_TRAIN_IMAGES_SAMPLE(permuatation)
-    accuracy=train(model,Train_loader,Test_loader,optimizer,3,'MNIST Skill '+str(permuatation))
+    accuracy=train(model,Train_loader,Test_loader,optimizer,3,'MNIST Skill '+str(permuatation+1))
     options = dict(fillarea=True,width=400,height=400,xlabel='Skill',ylabel='Actual_Accuracy',title='Actual_Accuracy')
     Actual_Accuracy.append(int(accuracy))
     print("Actual acc",Actual_Accuracy)
