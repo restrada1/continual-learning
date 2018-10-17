@@ -33,3 +33,5 @@ ICLR 2019/Permutated_MNIST/MSE_Cutoff/task_net_models/*
 ICLR 2019/Permutated_MNIST/Test_Set_Performance_Cutoff/Collected_Data\
 ICLR 2019/Permutated_MNIST/Test_Set_Performance_Cutoff/task_net_models/*
 ICLR 2019/Permutated_MNIST/Test_Set_Performance_Cutoff/Collected_Data/8_data
+ICLR 2019/Incremental_MNIST/Test_Set_Performance_Cutoff/task_net_models/*
+ICLR 2019/Incremental_MNIST/data/*
