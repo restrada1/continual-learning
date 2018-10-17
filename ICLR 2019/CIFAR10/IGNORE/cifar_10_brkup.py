@@ -15,16 +15,11 @@ import helper_functions
 import models
 import time
 import pandas as pd
+import utils
 import numpy as np
 import os
 from PIL import Image
 import pickle
-import visdom
-vis = visdom.Visdom()
-vis.delete_env('CIFAR10_TEST_SET_latent_50') #If you want to clear all the old plots for this python Experiments.Resets the Environment
-vis = visdom.Visdom(env='CIFAR10_TEST_SET_latent_50')
-
-
 #from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig
 ################################################################################
 #                              EXECUTION FLAGS                                 #                             
@@ -73,20 +68,19 @@ classes = ('plane', 'car', 'bird', 'cat','deer', 'dog', 'frog', 'horse', 'ship',
 ######################################################################################################
 #                                   LOAD DATASET AND TRANSFORMS
 ######################################################################################################
-
 transform = transforms.Compose(
     [transforms.ToTensor(),
      transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))])
 
-trainset = torchvision.datasets.CIFAR10(root='./../data', train=True,
+trainset = torchvision.datasets.CIFAR10(root='../data', train=True,
                                         download=True, transform=transform)
 train_loader = torch.utils.data.DataLoader(trainset, batch_size=4,
                                           shuffle=True, num_workers=4)
 
-testset = torchvision.datasets.CIFAR10(root='./../data', train=False,
+testset = torchvision.datasets.CIFAR10(root='../data', train=False,
                                        download=True, transform=transform)
 test_loader = torch.utils.data.DataLoader(testset, batch_size=4,
-                                         shuffle=True, num_workers=4)
+                                         shuffle=False, num_workers=4)
 
 
 ######################################################################################################
@@ -256,8 +250,8 @@ def load_individual_class(postive_class,negative_classes):
         index_test_postive=index_test_postive+test_Indexs[postive_class[i]]
         
     for i in range(0,len(negative_classes)):
-        index_train_negative=index_train_negative+train_Indexs[negative_classes[i]][0:int(0.2*(len(train_Indexs[negative_classes[i]])))]
-        index_test_negative=index_test_negative+test_Indexs[negative_classes[i]][0:int(0.2*(len(test_Indexs[negative_classes[i]])))]
+        index_train_negative=index_train_negative+train_Indexs[negative_classes[i]][0:int(0.3*(len(train_Indexs[negative_classes[i]])))]
+        index_test_negative=index_test_negative+test_Indexs[negative_classes[i]][0:int(0.5*(len(test_Indexs[negative_classes[i]])))]
     
     index_train=index_train_postive+index_train_negative
     index_test=index_test_postive+index_test_negative
@@ -269,24 +263,25 @@ def load_individual_class(postive_class,negative_classes):
     testset.test_data=testset.test_data[index_test]#testset data
     train_loader = torch.utils.data.DataLoader(trainset, batch_size=4,shuffle=True)
     test_loader = torch.utils.data.DataLoader(testset, batch_size=4,shuffle=True) 
-    return train_loader,test_loader
+
+    return test_loader,train_loader
 
 # CALUCULATE_TRAIN_INDEXES()
 # CALUCULATE_TEST_INDEXES()
 
-def imshow(img,cifar_class):
+def imshow(img):
     img = img / 2 + 0.5     # unnormalize
     npimg = img.numpy()
     plt.imshow(np.transpose(npimg, (1, 2, 0)))
-    plt.savefig('Test_Train_Images/train_data_image'+str(cifar_class)+'.png')
+    plt.savefig('train_data_image.png')
 
 def imshow_test(img):
     img = img / 2 + 0.5     # unnormalize
     npimg = img.numpy()
     plt.imshow(np.transpose(npimg, (1, 2, 0)))
-    plt.savefig('Test_Train_Images/test_data_image'+str(cifar_class)+'.png')
+    plt.savefig('test_data_image.png')
 
-def SHOW_TEST_TRAIN_IMAGES_SAMPLE(cifar_class):
+def SHOW_TEST_TRAIN_IMAGES_SAMPLE():
     # get some random training images
     global train_loader
     global test_loader
@@ -296,61 +291,47 @@ def SHOW_TEST_TRAIN_IMAGES_SAMPLE(cifar_class):
     #print("length if train set loader is",len(train_loader))
     images, labels = dataiter.next()
     images_test, labels_test = dataiter_test.next()
-    imshow(torchvision.utils.make_grid(images),cifar_class)
+    imshow(torchvision.utils.make_grid(images))
     imshow_test(torchvision.utils.make_grid(images_test))
-    # img = Image.open('train_data_image'+str(cifar_class)+'.png')
-    # img.show()
-    # time.sleep(5)
+    img = Image.open('train_data_image.png')
+    img.show()
+    time.sleep(5)
     print(' '.join('%5s' % classes[labels[j]] for j in range(4)))
-    # img = Image.open('test_data_image'+str(cifar_class)+'.png')
+    img = Image.open('test_data_image.png')
     print(' '.join('%5s' % classes[labels_test[j]] for j in range(4)))
-    # img.show() 
+    img.show() 
 
 
 #####################################################################################################################
 #                                              TRAIN CIFAR WITHOUT PROGRESS BAR                                     #
 #####################################################################################################################
 
-def train(model,train_loader,test_loader,optimizer, epochs,task_number):
-    options = dict(fillarea=True,width=400,height=400,xlabel='Batch_ID(Iterations)',ylabel='Loss',title=str(task_number))
-    acc_options = dict(fillarea=True,width=400,height=400,xlabel='Epoch',ylabel='Accuracy',title=str(task_number))
-    win = vis.line(X=np.array([0]),Y=np.array([0.7]),win=task_number,name=task_number,opts=options)
-    model.to(device)
-    model.train()
-    total_batchid=0
-    task_test_accuracy=[0]
+def train(epochs):
+    net.to(device)
+    net.train()
     for epoch in range(0,epochs):
-        running_loss = 0.0
-        for batch_idx, (data, target) in enumerate(train_loader,0):
+        for batch_idx, (data, target) in enumerate(train_loader):
             data, target = data.to(device), target.to(device)
             optimizer.zero_grad()
-            output = model(data)
+            output = net(data)
             loss = criterion(output, target)
-            #vis.line(X=np.array([total_batchid+batch_idx]),Y=np.array([loss.item()]),win=win,update='append')
             loss.backward()
             optimizer.step()
             #print("loss is ",loss.data[0])
-            running_loss += loss.item()
-            if batch_idx %  400 == 0:
-                print('[%d, %5d] loss: %.3f' %(epoch + 1, batch_idx + 1, running_loss / 400))
-                vis.line(X=np.array([total_batchid+batch_idx]),Y=np.array([loss.item()]),win=win,update='append')
-                running_loss = 0.0
-                # print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                #     epoch, batch_idx * len(data), len(train_loader.dataset),
-                #     100. * batch_idx / len(train_loader), loss.item()))
-        total_batchid=total_batchid+batch_idx
-        accuracy=test(model,test_loader)
-        task_test_accuracy.append(accuracy)
-        vis.bar(X=np.array(task_test_accuracy),win='ACC'+str(task_number),opts=acc_options)
+            if batch_idx % 20 == 0:
+                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
+                    epoch, batch_idx * len(data), len(train_loader.dataset),
+                    100. * batch_idx / len(train_loader), loss.item()))
+        accuracy=test()
     return accuracy
 
 #####################################################################################################################
 #                                               TRAIN CIFAR WITHOUT PROGRESS BAR                                    #
 #####################################################################################################################
 
-def test(model, test_loader):
-    model.to(device)
-    model.eval()
+def test():
+    net.to(device)
+    net.eval()
     test_loss = 0
     correct = 0
     #print("length of testset loader is",len(test_loader))
@@ -358,7 +339,7 @@ def test(model, test_loader):
     with torch.no_grad():
         for data, target in test_loader:
             data, target = data.to(device), target.to(device)
-            output = model(data)
+            output = net(data)
             test_loss += criterion(output, target)#.item() # sum up batch loss
             pred = output.max(1, keepdim=True)[1] # get the index of the max log-probability
             correct += pred.eq(target.view_as(pred)).sum().item()
@@ -369,20 +350,101 @@ def test(model, test_loader):
         100. * correct / len(test_loader.dataset)))
     return 100. * correct / len(test_loader.dataset)
 
+#####################################################################################################################
+#                                  TRAIN CIFAR WITH PROGRESS BAR                                                    #
+#####################################################################################################################
+# Training
+def train_cifar10(epoch):
+    print('\nEpoch: %d' % epoch)
+    #optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
+    #criterion = nn.CrossEntropyLoss()
+    net.to(device)
+    net.train()
+    train_loss = 0
+    correct = 0
+    total = 0
+    for batch_idx, (inputs, targets) in enumerate(train_loader):
+        inputs, targets = inputs.to(device), targets.to(device)
+        optimizer.zero_grad()
+        outputs = net(inputs)
+        loss = criterion(outputs, targets)
+        loss.backward()
+        optimizer.step()
+
+        train_loss += loss.item()
+        _, predicted = outputs.max(1)
+        total += targets.size(0)
+        correct += predicted.eq(targets).sum().item()
+
+        utils.progress_bar(batch_idx, len(train_loader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
+            % (train_loss/(batch_idx+1), 100.*correct/total, correct, total))
+
+#####################################################################################################################
+#                                  TEST CIFAR WITH PROGRESS BAR                                                    #
+#####################################################################################################################
+def test_cifar10(epoch):
+    global best_acc
+    net.to(device)
+    net.eval()
+    test_loss = 0
+    correct = 0
+    total = 0
+    with torch.no_grad():
+        for batch_idx, (inputs, targets) in enumerate(test_loader):
+            inputs, targets = inputs.to(device), targets.to(device)
+            outputs = net(inputs)
+            loss = criterion(outputs, targets)
+
+            test_loss += loss.item()
+            _, predicted = outputs.max(1)
+            total += targets.size(0)
+            correct += predicted.eq(targets).sum().item()
+
+            utils.progress_bar(batch_idx, len(test_loader), 'Loss: %.3f | Acc: %.3f%% (%d/%d)'
+                % (test_loss/(batch_idx+1), 100.*correct/total, correct, total))
+
+    # Save checkpoint.
+    acc = 100.*correct/total
+    if acc > best_acc:
+        print('Saving..')
+        state = {
+            'net': net.state_dict(),
+            'acc': acc,
+            'epoch': epoch,
+        }
+        if not os.path.isdir('checkpoint'):
+            os.mkdir('checkpoint')
+        torch.save(state, './checkpoint/ckpt.t7')
+        best_acc = acc
+    return acc
+
+
+######################################################################################################
+#                           FLATTEN THE CIFAR WEIGHTS AND FEED IT TO CAE                             #
+######################################################################################################
+def FLATTEN_WEIGHTS_TRAIN_VAE(task_samples,model):
+    final_skill_sample=[]
+    Flat_input,net_shapes=helper_functions.flattenNetwork(model.cpu())
+    final_skill_sample.append(Flat_input)
+    if len(task_samples)==0:
+        accuracies = CAE_AE_TRAIN(net_shapes,task_samples+final_skill_sample,100)
+    else:
+        accuracies = CAE_AE_TRAIN(net_shapes,task_samples+final_skill_sample,300)
+    return accuracies
+
 ######################################################################################################
 #                                   GLOBAL VARIABLES
 ######################################################################################################
-
+#net=models.Net().to(device)
+net_reset=models.Net().to(device)
 Actual_Accuracy=[]
 criterion = nn.CrossEntropyLoss()
 student_model=models.SPLIT_CIFAR_CAE_TWO_SKILLS().to(device)
 teacher_model=models.SPLIT_CIFAR_CAE_TWO_SKILLS().to(device)
 vae_optimizer =optim.Adam(student_model.parameters(), lr = 0.0001)#, amsgrad=True)
-lam = 0.001
+lam = 0.0001
 Actual_Accuracy=[]
 threshold_batchid=[]
-threshold_net_updates=[]
-Actual_task_net_weights=[]
 #biased training variables
 nSamples = 10
 nBiased = min(nSamples,10)
@@ -400,22 +462,10 @@ Skill_Mu=[[] for _ in range(0,10)]
 def CAE_AE_TRAIN(shapes,task_samples,iterations):
     global stage
     global Skill_Mu
-    global lam
-    global student_model
-    global vae_optimizer
-    options = dict(fillarea=True,width=400,height=400,xlabel='Iterations',ylabel='Loss',title='CAE_skills'+str(len(task_samples)))
-    options_2 = dict(fillarea=True,width=400,height=400,xlabel='Iterations',ylabel='Accuracy',title='CAE_skills'+str(len(task_samples)))
-    options_mse = dict(fillarea=True,width=400,height=400,xlabel='Iterations',ylabel='MSE',title='CAE_MSE_skills'+str(len(task_samples)))
-    options_mse_org = dict(fillarea=True,width=400,height=400,xlabel='Iterations',ylabel='MSE_Orginal',title='CAE_MSE_WRT_Orginal_skills'+str(len(task_samples)))
-    win = vis.line(X=np.array([0]),Y=np.array([0.005]),win='CAE_skills '+str(len(task_samples)),name='CAE_skills'+str(len(task_samples)),opts=options)
-    win_2 = vis.line(X=np.array([0]),Y=np.array([0]),win='CAE_Acc_skills '+str(len(task_samples)),name='CAE_skills'+str(len(task_samples)),opts=options_2)
-    win_mse = vis.line(X=np.array([0]),Y=np.array([0]),win='CAE_MSE_skills '+str(len(task_samples)),name='CAE_MSE_skills'+str(len(task_samples)),opts=options_mse)
-    win_mse_org = vis.line(X=np.array([0]),Y=np.array([0]),win='CAE_MSE_Org_skills '+str(len(task_samples)),name='CAE_MSE_Orgskills'+str(len(task_samples)),opts=options_mse_org)
     splitted_input=[]
     skills=[]
     task_samples_copy=task_samples
     total=len(task_samples)
-    total_resend=0
     final_dataframe_1=pd.DataFrame()
     accuracies = np.zeros((iterations,len(task_samples)))
     for t_input in range(0,len(task_samples)):
@@ -424,13 +474,12 @@ def CAE_AE_TRAIN(shapes,task_samples,iterations):
             skills.append(splitted_input[i])
     task_samples=skills
     Skill_Mu=[[] for _ in range(0,len(task_samples))]
+    global student_model
+    global vae_optimizer
     # student_model=models.SPLIT_CIFAR_CAE_TWO_SKILLS()#.to(device)
     # vae_optimizer = optim.Adam(student_model.parameters(), lr = 0.0001)#, amsgrad=True)
     student_model.train()
     iterations=iterations
-    # if total>=8:
-    #     print("Decreasing the Lamda")
-    #     lam=0.0001
     for batch_idx in range(1,iterations):
         randPerm=np.random.permutation(len(task_samples))
         #randPerm,nReps = helper_functions.biased_permutation(stage+1,nBiased,trainBias,total*3,minReps)
@@ -447,15 +496,12 @@ def CAE_AE_TRAIN(shapes,task_samples,iterations):
                 data.view(-1, 20442), recons_x,hidden_representation, lam)
             Skill_Mu[skill]=hidden_representation
             loss.backward()
-            vis.line(X=np.array([batch_idx]),Y=np.array([loss.item()]),win=win,name='Loss_Skill_'+str(skill),update='append')
             vae_optimizer.step()
             print('Train Iteration: {},tLoss: {:.6f},picked skill {}'.format(batch_idx,loss.data[0],skill ))
             #print(float(loss.data[0] * 1000))
             if float(loss.data[0] * 10000)>=1.00:
                 resend.append(s)
         print("RESEND List",resend)
-        total_resend=total_resend+len(resend)
-        # if len(resend)>1:
         for s in resend:
             skill=s
             #print("resending skills",resend)
@@ -467,26 +513,9 @@ def CAE_AE_TRAIN(shapes,task_samples,iterations):
                 data.view(-1, 20442), recons_x,hidden_representation, lam)
             Skill_Mu[skill]=hidden_representation
             loss.backward()
-            vis.line(X=np.array([batch_idx+0.5]),Y=np.array([loss.item()]),win=win,name='Loss_Skill_'+str(skill),update='append')
             vae_optimizer.step()
 
             print('Train Iteration: {},tLoss: {:.6f},picked skill {}'.format(batch_idx,loss.data[0],skill ))
-    # else:
-        #     print("The Length of resend list is ",len(resend))
-        #     for s in randPerm:
-        #         skill=s
-        #         vae_optimizer.zero_grad()
-        #         data=Variable(torch.FloatTensor(task_samples[skill])).to(device)
-        #         #print(data)
-        #         hidden_representation, recons_x = student_model(data)
-        #         W = student_model.state_dict()['fc2.weight']
-        #         loss,con_mse,con_loss,closs_mul_lam = helper_functions.Contractive_loss_function(W, 
-        #             data.view(-1, 20442), recons_x,hidden_representation, lam)
-        #         Skill_Mu[skill]=hidden_representation
-        #         loss.backward()
-        #         vae_optimizer.step()
-        #         print('Train Iteration: {},tLoss: {:.6f},picked skill {}'.format(batch_idx,loss.data[0],skill ))
-
         if batch_idx %1==0:
             m=0
             n=3
@@ -494,12 +523,14 @@ def CAE_AE_TRAIN(shapes,task_samples,iterations):
             values=0
             for i in range(0,int(len(task_samples)/3)):
                 collect_data_1=[]
+                global net
+                RELOAD_DATASET()
                 Avg_Accuracy=0
                 if i>=6:
-                    Train_loader,Test_loader=load_individual_class([i],[0,1,2,3])
+                    load_individual_class([i],[0,1,2,3])
                 else:
                     print("++++++++++")
-                    Train_loader,Test_loader=load_individual_class([i],[6,7,8,9])
+                    load_individual_class([i],[6,7,8,9])
                 sample=[]
                 for k in range(m,n):
                     mu1=Skill_Mu[k][0]
@@ -510,72 +541,50 @@ def CAE_AE_TRAIN(shapes,task_samples,iterations):
                 n=n+3
                 #print('MSE IS',i,mean_squared_error(task_sample.data.numpy(),Variable(torch.FloatTensor(task_samples[i])).data.numpy()))
                 final_weights=helper_functions.unFlattenNetwork(torch.from_numpy(sample).float(), shapes)
-                model_x=loadWeights_cifar(final_weights,model)
-                Avg_Accuracy=test(model_x, Test_loader)
+                loadWeights_cifar(final_weights,net)
+                Avg_Accuracy=test()
                 mse=mean_squared_error(sample,Variable(torch.FloatTensor(task_samples_copy[i])).data.numpy())
-                mse_orginal=mean_squared_error(sample,Actual_task_net_weights[i])
-                collect_data_1.extend([batch_idx,i,mse,mse_orginal,Avg_Accuracy,Actual_Accuracy[i],len(resend)])
+                collect_data_1.extend([batch_idx,i,mse,Avg_Accuracy,Actual_Accuracy[i],len(resend)])
                 final_dataframe_1=pd.concat([final_dataframe_1, pd.DataFrame(collect_data_1).transpose()])
                 accuracies[batch_idx,i] = Avg_Accuracy
-                vis.line(X=np.array([batch_idx]),Y=np.array([Avg_Accuracy]),win=win_2,name='Acc_Skill_'+str(i),update='append')
-                vis.line(X=np.array([batch_idx]),Y=np.array([mse]),win=win_mse,name='MSE_Skill_'+str(i),update='append')
-                vis.line(X=np.array([batch_idx]),Y=np.array([mse_orginal]),win=win_mse_org,name='MSE_Org_Skill_'+str(i),update='append')#,opts=options_lgnd)
                 if total<=7:
                     if round(Avg_Accuracy+0.5)>=int(Actual_Accuracy[i]):
                         values=values+1
                 else:
-                    if round(Avg_Accuracy+0.5)>=int(Actual_Accuracy[i]):
+                    if round(Avg_Accuracy+0.5)>=int(Actual_Accuracy[i]-2):
                         print("verifying the degrading threshold")
                         values=values+1
 
             if values==total:
                 print("########## \n Batch id is",batch_idx,"\n#########")
                 threshold_batchid.append(batch_idx)
-                threshold_net_updates.append((batch_idx*total)+total_resend)
                 break
     stage=stage+3
-    print(final_dataframe_1.head(5))
-    final_dataframe_1.columns=['batch_idx','skill','caluclated_mse','mse_wrt_orginal','Accuracy','Actual_Accuracy','Resend_len']
-    final_dataframe_1.to_hdf('Collected_Data/'+str(len(task_samples))+'_data','key1')
-    return accuracies
-
-######################################################################################################
-#                           FLATTEN THE CIFAR WEIGHTS AND FEED IT TO CAE                             #
-######################################################################################################
-def FLATTEN_WEIGHTS_TRAIN_VAE(task_samples,model):
-    final_skill_sample=[]
-    Flat_input,net_shapes=helper_functions.flattenNetwork(model.cpu())
-    final_skill_sample.append(Flat_input)
-    Actual_task_net_weights.append(Flat_input)
-    if len(task_samples)==0:
-        accuracies = CAE_AE_TRAIN(net_shapes,task_samples+final_skill_sample,100)
-    else:
-        accuracies = CAE_AE_TRAIN(net_shapes,task_samples+final_skill_sample,300)
+    final_dataframe_1.columns=['batch_idx','skill','caluclated_mse','Accuracy','Actual_Accuracy','Resend_len']
+    final_dataframe_1.to_hdf('MSE/'+str(len(task_samples_copy))+'_MSE_final','key1')
     return accuracies
 #####################################################################################################################
 #                                  CIFAR AND CAE TRAIN START HERE ALL START HERE                                    #
 #####################################################################################################################
 #if Flags['CIFAR_10_Incrmental']:
-
+net=models.Net()
 for cifar_class in range(0,10):
     allAcc = []
-    model=models.Net()
-    optimizer = optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
+    optimizer = optim.SGD(net.parameters(), lr=0.001, momentum=0.9)
     task_samples=[]
     if cifar_class>=6:
-        print("----------")
-        Train_loader,Test_loader=load_individual_class([cifar_class],[0,1,2,3])
+            load_individual_class([cifar_class],[0,1,2,3])
     else:
         print("++++++++++")
-        Train_loader,Test_loader=load_individual_class([cifar_class],[6,7,8,9])
-    SHOW_TEST_TRAIN_IMAGES_SAMPLE(cifar_class)
-    accuracy=train(model,Train_loader,Test_loader,optimizer,3,'CIFAR Skill '+str(cifar_class+1))
-    torch.save(model.state_dict(),'task_net_models/cifar_classes_'+str(cifar_class)+'.pt')
+        load_individual_class([cifar_class],[6,7,8,9])
+    #SHOW_TEST_TRAIN_IMAGES_SAMPLE()
+    accuracy=train(3)
+    torch.save(net.state_dict(),'cifar_individual_weights/cifar_classes_'+str(cifar_class)+'.pt')
     Actual_Accuracy.append(int(accuracy))
     print("Actual ACCCC",Actual_Accuracy,cifar_class)
     print("Threshold at Different SKills are",threshold_batchid)
     if cifar_class==0:
-        accuracies=FLATTEN_WEIGHTS_TRAIN_VAE([],model)
+        accuracies=FLATTEN_WEIGHTS_TRAIN_VAE([],net)
     else:
         m=0
         n=3
@@ -591,28 +600,20 @@ for cifar_class in range(0,10):
             task_samples.append(generated_sample)
             m=m+3
             n=n+3
-        accuracies=FLATTEN_WEIGHTS_TRAIN_VAE(task_samples,model) 
+        accuracies=FLATTEN_WEIGHTS_TRAIN_VAE(task_samples,net) 
     allAcc.append(accuracies)
 
-    with open('Collected_Data/allAcc_'+str(cifar_class), 'wb') as fp:
-        pickle.dump(allAcc, fp)
+with open('allAcc_resendskills_cae2_lam_0.0001_final', 'wb') as fp:
+    pickle.dump(allAcc, fp)
 
-    with open('Collected_Data/Actual_Accuracy_'+str(cifar_class), 'wb') as fp:
-        pickle.dump(Actual_Accuracy, fp)
-    
+with open('Actual_Accuracy_resendskills_cae2_lam_0.0001_final', 'wb') as fp:
+    pickle.dump(Actual_Accuracy, fp)
 
-    if cifar_class>=1:
-        options = dict(fillarea=True,width=400,height=400,xlabel='Skill',ylabel='Actual_Accuracy',title='Actual_Accuracy')
-        options_threshold = dict(fillarea=True,width=400,height=400,xlabel='Skill',ylabel='Threshold_Cutoff',title='Cutoff_Threshold')
-        options_threshold_net_updates = dict(fillarea=True,width=400,height=400,xlabel='Skill',ylabel='Threshold_Cutoff',title='Cutoff_Threshold_Net_Updates')
-        vis.bar(X=Actual_Accuracy,opts=options,win='acc_viz')
-        vis.bar(X=threshold_batchid,opts=options_threshold,win='threshold_viz')
-        vis.bar(X=threshold_net_updates,opts=options_threshold_net_updates,win='threshold_viz_net_updates')
-        
+with open('threshold_cae2_lam_0.0001_final', 'wb') as fp:
+    pickle.dump(threshold_batchid, fp)
 
 
-
-# plotAccuracies(allAcc)
-# plotAccuracyDiff(allAcc,Actual_Accuracy)
-# plotAccuracyDiffPoint(allAcc,Actual_Accuracy,testPoint=25)
-# plotAccuracyDiffPointAll(allAcc,Actual_Accuracy,testPoint=25)
+plotAccuracies(allAcc)
+plotAccuracyDiff(allAcc,Actual_Accuracy)
+plotAccuracyDiffPoint(allAcc,Actual_Accuracy,testPoint=25)
+plotAccuracyDiffPointAll(allAcc,Actual_Accuracy,testPoint=25)

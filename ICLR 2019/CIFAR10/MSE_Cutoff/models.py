@@ -95,8 +95,8 @@ class SPLIT_CIFAR_CAE_TWO_SKILLS(nn.Module):
     def __init__(self):
         super(SPLIT_CIFAR_CAE_TWO_SKILLS, self).__init__()
         self.fc1 = nn.Linear(20442, 1000,bias = True)
-        self.fc2 = nn.Linear(1000,20,bias = True)
-        self.fc3 = nn.Linear(20,1000,bias = True)
+        self.fc2 = nn.Linear(1000,50,bias = True)
+        self.fc3 = nn.Linear(50,1000,bias = True)
         self.fc4 = nn.Linear(1000, 20442,bias = True)
         self.sigmoid = nn.Tanh()
 

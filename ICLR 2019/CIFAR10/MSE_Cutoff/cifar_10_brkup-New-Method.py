@@ -1,3 +1,11 @@
+##############################################################################################################################
+# Aim of the Experiment: CIFAR 10 with Cosine Similarity Cutoff
+# Output: All the collected data for individual skill is present in the folder -- Collected_Data
+# Task Nets: All the trained CIFAR 10 weights saved in the folder -- task_net_models
+# Test & Train Image Samples: All the train,test CIFAR 10 task images sample saved in the folder -- Test_Train_Images
+# Plots : If any plots you can save in folder -- Permuated_MNIST_plots (Currently Not Used)
+# Conclusion : Working As expected for all skills reaching threshold except one skill where one skill prodeuce 82 acc vs 84 orginal
+##############################################################################################################################
 import argparse
 import torch
 import torchvision
@@ -19,10 +27,12 @@ import numpy as np
 import os
 from PIL import Image
 import pickle
+from numpy import dot
+from numpy.linalg import norm
 import visdom
 vis = visdom.Visdom()
-vis.delete_env('CIFAR10_TEST_SET_latent_50') #If you want to clear all the old plots for this python Experiments.Resets the Environment
-vis = visdom.Visdom(env='CIFAR10_TEST_SET_latent_50')
+vis.delete_env('CIFAR10_Cosine_Cutoff_Cosine_Resend') #If you want to clear all the old plots for this python Experiments.Resets the Environment
+vis = visdom.Visdom(env='CIFAR10_Cosine_Cutoff_Cosine_Resend')
 
 
 #from utils import Bar, Logger, AverageMeter, accuracy, mkdir_p, savefig
@@ -239,6 +249,11 @@ def plotAccuracyDiffPointAll(allAcc,Actual_Accuracies,testPoint=25):
     f.savefig('./CIFAR_plots/acc_diff_pt_all_'+str(s)+'_'+str(testPoint)+'.pdf', bbox_inches='tight')
     plt.close()
 
+def jaccard_similarity(x,y):
+
+    intersection_cardinality = len(set.intersection(*[set(x), set(y)]))
+    union_cardinality = len(set.union(*[set(x), set(y)]))
+    return intersection_cardinality/float(union_cardinality)
 ######################################################################################################
 #                           MODIFYING DATSET FOR BINARY CLASSES
 ######################################################################################################
@@ -394,7 +409,6 @@ addRepsTotal = nReps*minReps
 #####################################################################################################################
 #                                              CAE TRAIN AND CIFAR TEST                                             #
 #####################################################################################################################
-print("VAE SCHEDULER IS ", vae_optimizer)
 Skill_Mu=[[] for _ in range(0,10)]
 
 def CAE_AE_TRAIN(shapes,task_samples,iterations):
@@ -406,11 +420,11 @@ def CAE_AE_TRAIN(shapes,task_samples,iterations):
     options = dict(fillarea=True,width=400,height=400,xlabel='Iterations',ylabel='Loss',title='CAE_skills'+str(len(task_samples)))
     options_2 = dict(fillarea=True,width=400,height=400,xlabel='Iterations',ylabel='Accuracy',title='CAE_skills'+str(len(task_samples)))
     options_mse = dict(fillarea=True,width=400,height=400,xlabel='Iterations',ylabel='MSE',title='CAE_MSE_skills'+str(len(task_samples)))
-    options_mse_org = dict(fillarea=True,width=400,height=400,xlabel='Iterations',ylabel='MSE_Orginal',title='CAE_MSE_WRT_Orginal_skills'+str(len(task_samples)))
+    options_mse_org = dict(fillarea=True,width=400,height=400,xlabel='Iterations',ylabel='Cosine_Similarity',title='Cosine_Similariyu'+str(len(task_samples)))
     win = vis.line(X=np.array([0]),Y=np.array([0.005]),win='CAE_skills '+str(len(task_samples)),name='CAE_skills'+str(len(task_samples)),opts=options)
     win_2 = vis.line(X=np.array([0]),Y=np.array([0]),win='CAE_Acc_skills '+str(len(task_samples)),name='CAE_skills'+str(len(task_samples)),opts=options_2)
     win_mse = vis.line(X=np.array([0]),Y=np.array([0]),win='CAE_MSE_skills '+str(len(task_samples)),name='CAE_MSE_skills'+str(len(task_samples)),opts=options_mse)
-    win_mse_org = vis.line(X=np.array([0]),Y=np.array([0]),win='CAE_MSE_Org_skills '+str(len(task_samples)),name='CAE_MSE_Orgskills'+str(len(task_samples)),opts=options_mse_org)
+    win_mse_org = vis.line(X=np.array([0]),Y=np.array([0]),win='Cosine_similarity '+str(len(task_samples)),name='Cosine_similarity'+str(len(task_samples)),opts=options_mse_org)
     splitted_input=[]
     skills=[]
     task_samples_copy=task_samples
@@ -424,13 +438,8 @@ def CAE_AE_TRAIN(shapes,task_samples,iterations):
             skills.append(splitted_input[i])
     task_samples=skills
     Skill_Mu=[[] for _ in range(0,len(task_samples))]
-    # student_model=models.SPLIT_CIFAR_CAE_TWO_SKILLS()#.to(device)
-    # vae_optimizer = optim.Adam(student_model.parameters(), lr = 0.0001)#, amsgrad=True)
     student_model.train()
     iterations=iterations
-    # if total>=8:
-    #     print("Decreasing the Lamda")
-    #     lam=0.0001
     for batch_idx in range(1,iterations):
         randPerm=np.random.permutation(len(task_samples))
         #randPerm,nReps = helper_functions.biased_permutation(stage+1,nBiased,trainBias,total*3,minReps)
@@ -440,7 +449,6 @@ def CAE_AE_TRAIN(shapes,task_samples,iterations):
             skill=s
             vae_optimizer.zero_grad()
             data=Variable(torch.FloatTensor(task_samples[skill])).to(device)
-            #print(data)
             hidden_representation, recons_x = student_model(data)
             W = student_model.state_dict()['fc2.weight']
             loss,con_mse,con_loss,closs_mul_lam = helper_functions.Contractive_loss_function(W, 
@@ -450,15 +458,18 @@ def CAE_AE_TRAIN(shapes,task_samples,iterations):
             vis.line(X=np.array([batch_idx]),Y=np.array([loss.item()]),win=win,name='Loss_Skill_'+str(skill),update='append')
             vae_optimizer.step()
             print('Train Iteration: {},tLoss: {:.6f},picked skill {}'.format(batch_idx,loss.data[0],skill ))
-            #print(float(loss.data[0] * 1000))
-            if float(loss.data[0] * 10000)>=1.00:
+            # recon=torch.FloatTensor(recons_x.cpu()).data.numpy().reshape(20442)
+            # b=torch.FloatTensor(task_samples[i]).data.numpy()
+            # small_cosine_sim=dot(b, recon)/(norm(b)*norm(recon))
+            # if small_cosine_sim<=0.99:
+            #     print(small_cosine_sim)
+            #     resend.append(s)
+            if float(loss.data[0] * 1000000)>=1.00:
                 resend.append(s)
         print("RESEND List",resend)
         total_resend=total_resend+len(resend)
-        # if len(resend)>1:
         for s in resend:
             skill=s
-            #print("resending skills",resend)
             vae_optimizer.zero_grad()
             data=Variable(torch.FloatTensor(task_samples[skill])).to(device)
             hidden_representation, recons_x = student_model(data)
@@ -471,22 +482,7 @@ def CAE_AE_TRAIN(shapes,task_samples,iterations):
             vae_optimizer.step()
 
             print('Train Iteration: {},tLoss: {:.6f},picked skill {}'.format(batch_idx,loss.data[0],skill ))
-    # else:
-        #     print("The Length of resend list is ",len(resend))
-        #     for s in randPerm:
-        #         skill=s
-        #         vae_optimizer.zero_grad()
-        #         data=Variable(torch.FloatTensor(task_samples[skill])).to(device)
-        #         #print(data)
-        #         hidden_representation, recons_x = student_model(data)
-        #         W = student_model.state_dict()['fc2.weight']
-        #         loss,con_mse,con_loss,closs_mul_lam = helper_functions.Contractive_loss_function(W, 
-        #             data.view(-1, 20442), recons_x,hidden_representation, lam)
-        #         Skill_Mu[skill]=hidden_representation
-        #         loss.backward()
-        #         vae_optimizer.step()
-        #         print('Train Iteration: {},tLoss: {:.6f},picked skill {}'.format(batch_idx,loss.data[0],skill ))
-
+   
         if batch_idx %1==0:
             m=0
             n=3
@@ -514,28 +510,26 @@ def CAE_AE_TRAIN(shapes,task_samples,iterations):
                 Avg_Accuracy=test(model_x, Test_loader)
                 mse=mean_squared_error(sample,Variable(torch.FloatTensor(task_samples_copy[i])).data.numpy())
                 mse_orginal=mean_squared_error(sample,Actual_task_net_weights[i])
-                collect_data_1.extend([batch_idx,i,mse,mse_orginal,Avg_Accuracy,Actual_Accuracy[i],len(resend)])
+                b=torch.FloatTensor(task_samples_copy[i]).data.numpy()
+                b1=torch.FloatTensor(Actual_task_net_weights[i]).data.numpy()
+                COSINE_SIMILARITY=dot(sample, b)/(norm(sample)*norm(b))
+                jacrad_similarity=jaccard_similarity(list(b),sample)
+                COSINE_SIMILARITY_wrt_orginal=dot(sample, b1)/(norm(sample)*norm(b1))
+                collect_data_1.extend([total,batch_idx,i,mse,mse_orginal,Avg_Accuracy,Actual_Accuracy[i],len(resend),sample,torch.FloatTensor(task_samples[i]).data.numpy(),jacrad_similarity,COSINE_SIMILARITY,COSINE_SIMILARITY_wrt_orginal])
                 final_dataframe_1=pd.concat([final_dataframe_1, pd.DataFrame(collect_data_1).transpose()])
                 accuracies[batch_idx,i] = Avg_Accuracy
                 vis.line(X=np.array([batch_idx]),Y=np.array([Avg_Accuracy]),win=win_2,name='Acc_Skill_'+str(i),update='append')
                 vis.line(X=np.array([batch_idx]),Y=np.array([mse]),win=win_mse,name='MSE_Skill_'+str(i),update='append')
-                vis.line(X=np.array([batch_idx]),Y=np.array([mse_orginal]),win=win_mse_org,name='MSE_Org_Skill_'+str(i),update='append')#,opts=options_lgnd)
-                if total<=7:
-                    if round(Avg_Accuracy+0.5)>=int(Actual_Accuracy[i]):
-                        values=values+1
-                else:
-                    if round(Avg_Accuracy+0.5)>=int(Actual_Accuracy[i]):
-                        print("verifying the degrading threshold")
-                        values=values+1
-
+                vis.line(X=np.array([batch_idx]),Y=np.array([COSINE_SIMILARITY]),win=win_mse_org,name='Cosine_Similarity_Skill_'+str(i),update='append')#,opts=options_lgnd)
+                if COSINE_SIMILARITY>0.993:
+                    values=values+1
             if values==total:
                 print("########## \n Batch id is",batch_idx,"\n#########")
                 threshold_batchid.append(batch_idx)
                 threshold_net_updates.append((batch_idx*total)+total_resend)
                 break
     stage=stage+3
-    print(final_dataframe_1.head(5))
-    final_dataframe_1.columns=['batch_idx','skill','caluclated_mse','mse_wrt_orginal','Accuracy','Actual_Accuracy','Resend_len']
+    final_dataframe_1.columns=['no_of_skills','batch_idx','skill','caluclated_mse','mse_wrt_orginal','Accuracy','Actual_Accuracy','Resend_len','sample','task_sample','jacrad_similarity','COSINE_SIMILARITY','COSINE_SIMILARITY_wrt_orginal']
     final_dataframe_1.to_hdf('Collected_Data/'+str(len(task_samples))+'_data','key1')
     return accuracies
 
@@ -579,8 +573,6 @@ for cifar_class in range(0,10):
     else:
         m=0
         n=3
-        #print(Skill_Mu)
-        #print(len(Skill_Mu))
         for i in range(0,cifar_class):
             generated_sample=[]
             for j in range(m,n):  
