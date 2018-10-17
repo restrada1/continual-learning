@@ -131,6 +131,7 @@ vae_optimizer = optim.Adam(student_model.parameters(), lr = 0.0001)
 lam = 0.001
 Actual_Accuracy=[]
 threshold_batchid=[]
+threshold_net_updates=[]
 Actual_task_net_weights=[]
 # win = vis.line(
 # X=np.array([0]),
@@ -309,6 +310,8 @@ def CAE_AE_TRAIN(shapes,task_samples,iterations):
     win_mse_org = vis.line(X=np.array([0]),Y=np.array([0]),win='CAE_MSE_Org_skills '+str(len(task_samples)),name='CAE_MSE_Orgskills'+str(len(task_samples)),opts=options_mse_org)
     student_model.train()
     final_dataframe_1=pd.DataFrame()
+    total_resend=0
+    total=len(task_samples)
     accuracies = np.zeros((iterations,len(task_samples)))
     for i in range(0,len(task_samples)-len(Skill_Mu)):
         Skill_Mu.append([])
@@ -334,6 +337,7 @@ def CAE_AE_TRAIN(shapes,task_samples,iterations):
             if float(loss.data[0] * 10000)>=1.00:
                 resend.append(s)
         print("RESEND List",resend)
+        total_resend=total_resend+len(resend)
         for s in resend:
             skill=s
             vae_optimizer.zero_grad()
@@ -360,16 +364,16 @@ def CAE_AE_TRAIN(shapes,task_samples,iterations):
                 #print('MSE IS',i,mean_squared_error(task_sample.data.numpy(),Variable(torch.FloatTensor(task_samples[i])).data.numpy()))
                 #mse=mean_squared_error(task_sample.data.numpy(),Variable(torch.FloatTensor(task_samples[i])).data.numpy())
                 final_weights=helper_functions.unFlattenNetwork(sample, shapes)
-                loadWeights_mnsit(final_weights,model)
+                model_x=loadWeights_mnsit(final_weights,model)
                 Train_loader,Test_loader=RELOAD_DATASET(idx_permute[i])
                 mse=mean_squared_error(sample,Variable(torch.FloatTensor(task_samples[i])).data.numpy())
                 mse_orginal=mean_squared_error(sample,Actual_task_net_weights[i])
-                Avg_Accuracy= test(model, Test_loader)
+                Avg_Accuracy= test(model_x, Test_loader)
                 collect_data_1.extend([batch_idx,i,mse,mse_orginal,Avg_Accuracy,Actual_Accuracy[i],len(resend)])
                 final_dataframe_1=pd.concat([final_dataframe_1, pd.DataFrame(collect_data_1).transpose()])
                 accuracies[batch_idx,i] = Avg_Accuracy
                 if len(task_samples)>6:
-                    if round(Avg_Accuracy+0.5)>=int(Actual_Accuracy[i]-1):
+                    if round(Avg_Accuracy+0.5)>=int(Actual_Accuracy[i]):
                         values=values+1
                 else:
                     if round(Avg_Accuracy+0.5)>=int(Actual_Accuracy[i]):
@@ -380,10 +384,11 @@ def CAE_AE_TRAIN(shapes,task_samples,iterations):
             if values==len(task_samples):
                 print("########## \n Batch id is",batch_idx,"\n#########")
                 threshold_batchid.append(batch_idx)
+                threshold_net_updates.append((batch_idx*total)+total_resend)
                 break
     stage=stage+1
     final_dataframe_1.columns=['batch_idx','skill','caluclated_mse','mse_wrt_orginal','Accuracy','Actual_Accuracy','Resend_len']
-    final_dataframe_1.to_hdf('Collected_Data/'+str(len(task_samples))+'_data','key1')
+    final_dataframe_1.to_hdf('Collected_Data/'+str(len(task_samples))+'_testset_data','key1')
     return accuracies
 
 
@@ -421,7 +426,7 @@ for permuatation in range(0,10):
     print("########## \n Threshold id is",threshold_batchid,"\n#########")
     Train_loader,Test_loader=RELOAD_DATASET(idx_permute[permuatation])
     SHOW_TEST_TRAIN_IMAGES_SAMPLE(permuatation)
-    accuracy=train(model,Train_loader,Test_loader,optimizer,3,'MNIST Skill '+str(permuatation+1))
+    accuracy=train(model,Train_loader,Test_loader,optimizer,4,'MNIST Skill '+str(permuatation+1))
     options = dict(fillarea=True,width=400,height=400,xlabel='Skill',ylabel='Actual_Accuracy',title='Actual_Accuracy')
     Actual_Accuracy.append(int(accuracy))
     print("Actual acc",Actual_Accuracy)
@@ -436,18 +441,20 @@ for permuatation in range(0,10):
         accuracies = FLATTEN_WEIGHTS_TRAIN_VAE(task_samples,model)
     allAcc.append(accuracies)
 
-    with open('Collected_Data/allAcc', 'wb') as fp:
+    with open('Collected_Data/allAcc_testset_'+str(permuatation), 'wb') as fp:
         pickle.dump(allAcc, fp)
 
-    with open('Collected_Data/Actual_Accuracy', 'wb') as fp:
+    with open('Collected_Data/Actual_Accuracy_testset_'+str(permuatation), 'wb') as fp:
         pickle.dump(Actual_Accuracy, fp)
     
 
     if permuatation>=1:
         options = dict(fillarea=True,width=400,height=400,xlabel='Skill',ylabel='Actual_Accuracy',title='Actual_Accuracy')
         options_threshold = dict(fillarea=True,width=400,height=400,xlabel='Skill',ylabel='Threshold_Cutoff',title='Cutoff_Threshold')
+        options_threshold_net_updates = dict(fillarea=True,width=400,height=400,xlabel='Skill',ylabel='Threshold_Cutoff',title='Cutoff_Threshold_Net_Updates')
         vis.bar(X=Actual_Accuracy,opts=options,win='acc_viz')
         vis.bar(X=threshold_batchid,opts=options_threshold,win='threshold_viz')
+        vis.bar(X=threshold_net_updates,opts=options_threshold_net_updates,win='threshold_viz_net_updates')
 
 
 
